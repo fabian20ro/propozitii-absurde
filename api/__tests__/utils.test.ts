@@ -241,6 +241,27 @@ describe("api/all.ts utilities", () => {
       // Source: firstQueryValue filters Boolean; empty strings drop from the array.
       expect(normalizeRarityRange(["", "2"], ["3", ""])).toEqual({ minR: 2, maxR: 3 });
     });
+    it("handles numeric strings directly (not arrays)", () => {
+      // Source: getNum uses firstQueryValue which returns raw string for non-comma input.
+      expect(normalizeRarityRange("1", "5")).toEqual({ minR: 1, maxR: 5 });
+      expect(normalizeRarityRange("-3", "9")).toEqual({ minR: 1, maxR: 5 });
+    });
+    it("handles all-invalid array elements (NaN branch)", () => {
+      // Source: firstQueryValue filters empty strings; ["abc"] → parsed="abc" → Number("abc")=NaN.
+      expect(normalizeRarityRange(["abc"], ["xyz"])).toEqual({ minR: 1, maxR: 2 });
+    });
+    it("handles undefined inputs (both NaN branch)", () => {
+      // Source: firstQueryValue(undefined) → undefined → getNum returns NaN.
+      expect(normalizeRarityRange(undefined, undefined)).toEqual({ minR: 1, maxR: 2 });
+    });
+    it("clamps float values but preserves fractional parts", () => {
+      // Source: Math.max(1, Math.min(5, v)) clamps boundaries only; Number() keeps floats.
+      expect(normalizeRarityRange("1.5", "4.7")).toEqual({ minR: 1.5, maxR: 4.7 });
+    });
+    it("handles zero as a valid number (clamped to 1)", () => {
+      // Source: Number("0")=0; Math.max(1, 0)=1.
+      expect(normalizeRarityRange("0", "5")).toEqual({ minR: 1, maxR: 5 });
+    });
   });
 
   describe("adjForGender", () => {
