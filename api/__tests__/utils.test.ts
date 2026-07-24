@@ -262,6 +262,10 @@ describe("api/all.ts utilities", () => {
       // Source: Number("0")=0; Math.max(1, 0)=1.
       expect(normalizeRarityRange("0", "5")).toEqual({ minR: 1, maxR: 5 });
     });
+    it("extracts last element from array when other side is invalid (else-if NaN branch)", () => {
+      // Source: getNum takes parsed[last]; if isNaN(maxVal) → minC clamped from valid min, maxC=5.
+      expect(normalizeRarityRange(["abc", "3"], "invalid")).toEqual({ minR: 3, maxR: 5 });
+    });
   });
 
   describe("adjForGender", () => {
