@@ -35,6 +35,13 @@ class HtmlVerseBreakerTest {
     }
 
     @Test
+    fun `should preserve html comments while replacing verses`() {
+        val mockProvider = ISentenceProvider { "<!-- note --> / break" }
+        val breaker = HtmlVerseBreaker(mockProvider)
+        assertEquals("<!-- note --><br/>break", breaker.getSentence())
+    }
+
+    @Test
     fun `should return empty string for blank input`() {
         val mockProvider = ISentenceProvider { "   \t  " }
         val breaker = HtmlVerseBreaker(mockProvider)
