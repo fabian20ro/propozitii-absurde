@@ -43,6 +43,17 @@ class DexlineLinkAdderTest {
     }
 
     @Test
+    fun `should handle multiple apostrophes in one word`() {
+        val provider = MockSentenceProvider("l'amare's")
+        val decorator = DexlineLinkAdder(provider)
+        val result = decorator.getSentence()
+
+        // Multiple apostrophes: all escaped to &#39;, URL-encoded as %27
+        val expected = "<a href=\"https://dexonline.ro/definitie/l%27amare%27s\" target=\"_blank\" rel=\"noopener\" data-word=\"l%27amare%27s\">l&#39;amare&#39;s</a>"
+        assertEquals(expected, result)
+    }
+
+    @Test
     fun `should use dexonline base URL in href`() {
         val provider = MockSentenceProvider("test")
         val decorator = DexlineLinkAdder(provider)
