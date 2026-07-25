@@ -27,4 +27,14 @@ class DecoratorTest {
         val expected = "<a href=\"https://dexonline.ro/definitie/ana\" target=\"_blank\" rel=\"noopener\" data-word=\"ana\">ana</a><br/><a href=\"https://dexonline.ro/definitie/are\" target=\"_blank\" rel=\"noopener\" data-word=\"are\">are</a>"
         assertEquals(expected, result)
     }
+
+    @Test
+    fun `should pass through non-letter content unchanged`() {
+        val baseProvider = object : ISentenceProvider {
+            override fun getSentence(): String = "123 & 456"
+        }
+        val result = DexlineLinkAdder(baseProvider).getSentence()
+
+        assertEquals("123 & 456", result)
+    }
 }
