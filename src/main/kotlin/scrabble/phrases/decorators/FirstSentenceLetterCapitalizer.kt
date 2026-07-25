@@ -19,7 +19,10 @@ class FirstSentenceLetterCapitalizer(private val provider: ISentenceProvider) : 
             val result = WordUtils.capitalizeFirstLetter(trimmed) ?: trimmed
             result.ifBlank { "" }
         } catch (e: Exception) {
-            logger.warn("FirstSentenceLetterCapitalizer provider failed, returning empty sentence", e)
+            logger.warn(
+                "FirstSentenceLetterCapitalizer provider failed: ${e::class.simpleName} - ${e.message}, returning empty sentence",
+                e,
+            )
             ""
         }
     }
