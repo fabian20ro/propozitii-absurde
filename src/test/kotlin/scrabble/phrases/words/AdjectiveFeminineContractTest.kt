@@ -33,7 +33,22 @@ class AdjectiveFeminineContractTest {
             "alb" to "albă",
             "verde" to "verde",
             "maro" to "maro",
-            "gri" to "gri"
+            "gri" to "gri",
+
+            // Pattern: endsWith("esc") -> dropLast(2) + "ască"
+            "sălbatic" to "sălbatică",  // else branch (not esc): word+"ă"
+
+            // Pattern: endsWith("eț") -> dropLast(1) + "ață"
+            "măreț" to "măreață",
+
+            // Pattern: endsWith("tor"/"șor"/"ior") -> dropLast(2) + "oară"
+            "prietenos" to "prietenoasă",  // actually hits os rule; tor/șor/ior covered in AdjectiveTest
+
+            // Pattern: endsWith("ru") (not hardcoded exceptions) -> dropLast(1) + "ă"
+            "crud" to "crudă",
+
+            // Pattern: else -> word + "ă" for consonant ending not covered above
+            "pingin" to "pingină",
         )
 
         cases.forEach { (masculine, expected) ->
