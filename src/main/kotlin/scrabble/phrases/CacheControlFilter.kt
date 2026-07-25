@@ -26,7 +26,8 @@ class CacheControlFilter : ContainerResponseFilter {
         context.headers.putSingle("Cache-Control", "no-cache, no-store")
     }
 
-    private fun isDiagnosticEndpoint(path: String): Boolean {
+    private fun isDiagnosticEndpoint(rawPath: String): Boolean {
+        val path = rawPath.trimEnd('/')
         return DIAGNOSTIC_PATTERN.matcher("/$path").matches()
     }
 
