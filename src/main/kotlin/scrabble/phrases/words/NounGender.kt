@@ -7,7 +7,7 @@ enum class NounGender {
         private val VALID_CODES: Set<String> = values().map { it.name.uppercase() }.toSet()
 
         /** Returns true if [code] (any case) maps to a known NounGender. */
-        fun isValidCode(code: String?): Boolean = code != null && !code.isEmpty() && code.uppercase() in VALID_CODES
+        fun isValidCode(code: String?): Boolean = code != null && !code.isBlank() && code.uppercase().trim() in VALID_CODES
 
         fun fromCode(code: String?): NounGender? {
             val upper = code?.uppercase() ?: return null

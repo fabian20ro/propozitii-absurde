@@ -11,3 +11,6 @@ sealed interface Word {
  */
 val Word.syllableCount: Int
     get() = this.syllables
+
+/** Counts whitespace-separated tokens in a string (skipping blank segments). */
+fun String.wordCount(): Int = split("\\s+".toRegex()).count { it.isNotEmpty() }
