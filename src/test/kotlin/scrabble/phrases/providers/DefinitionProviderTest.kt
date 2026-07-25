@@ -66,6 +66,9 @@ class DefinitionProviderTest {
             provider.getSentence()
         }
 
+        // When repo calls fail directly (outside inner try-catch on lines 26-30), the raw
+        // repository message propagates — e.g. "No nouns found in database for rarity between ..."
+        // The test confirms: exception is thrown, message references rarity or database, and it's an IllegalStateException.
         assertTrue(
             ex.message!!.contains("rarity") || ex.message!!.contains("database"),
             "Error message should reference rarity or database (got: '${ex.message}')"
