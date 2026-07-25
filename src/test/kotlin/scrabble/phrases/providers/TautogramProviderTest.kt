@@ -54,6 +54,7 @@ class TautogramProviderTest {
         // For a known tautogram prefix, get gender from repository and assert that
         // the adjective in position 2 of the generated sentence matches that gender.
         val provider = TautogramProvider(repository, 1, 5)
+        var feminineSamples = 0
         repeat(30) {
             val prefix = repository.getRandomPrefixWithAllTypes(minRarity = 1, maxRarity = 5) ?: return@repeat
             // Fetch a noun by this prefix to know its gender
@@ -66,6 +67,7 @@ class TautogramProviderTest {
 
             // If the sample noun is feminine (F), the adjective in position 2 should end with a feminine marker.
             if (sampleNoun.gender == NounGender.F) {
+                feminineSamples++
                 assertTrue(
                     adjectiveToken.endsWith('ă') || adjectiveToken.endsWith('e'),
                     "Adjective '$adjectiveToken' at position 1 should feminize for gender F, expected ending in one of [ă, e]"
@@ -79,6 +81,21 @@ class TautogramProviderTest {
                     "Word '$w' does not match tautogram prefix '$prefix'"
                 )
             }
+        }
+        // Make feminine-agreement contract observable: if no feminine samples were found,
+        // the assertion above was vacuously true. Fail explicitly so this isn't pass-by-omission.
+        assertTrue(
+            feminineSamples > 0,
+            "Test did not encounter any feminine noun during 30 iterations; adjective feminization contract is unverified"
+        )
+
+        // All words must start with the tautogram prefix (contract invariant).
+        val finalSentence = provider.getSentence().removeSuffix(".")
+        val finalTokens = finalSentence.split(" ").filter { it.isNotBlank() }
+        assertEquals(4, finalTokens.size)
+        val firstChar = finalTokens[0].first().toString().lowercase()
+        finalTokens.forEach { w ->
+            assertTrue(w.lowercase().startsWith(firstChar), "Word '$w' does not match tautogram prefix '$firstChar'")
         }
     }
 }

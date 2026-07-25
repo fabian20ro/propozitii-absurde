@@ -32,5 +32,10 @@ data class Noun(
             word.endsWith("a") -> word + "ua"
             else -> word + "a"
         }
+
+        fun articulated(word: String, gender: NounGender): String = when (gender) {
+            NounGender.M, NounGender.N -> articulateMasculine(word)
+            NounGender.F -> articulateFeminine(word)
+        }
     }
 }
