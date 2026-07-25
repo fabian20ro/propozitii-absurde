@@ -53,6 +53,13 @@ class VerseLineCapitalizerTest {
     }
 
     @Test
+    fun `should handle leading slash without producing empty segment`() {
+        val provider = MockProvider("/ line two")
+        val capitalizer = VerseLineCapitalizer(provider)
+        assertEquals("Line two", capitalizer.getSentence())
+    }
+
+    @Test
     fun `should handle trailing slash without producing empty segment`() {
         val provider = MockProvider("line one /")
         val capitalizer = VerseLineCapitalizer(provider)
