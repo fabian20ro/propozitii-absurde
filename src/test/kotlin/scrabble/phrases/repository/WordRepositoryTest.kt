@@ -26,6 +26,14 @@ class WordRepositoryTest {
     }
 
     @Test
+    fun shouldApplyRarityFilterForAdjectives() {
+        repeat(5) {
+            val adj = repository.getRandomAdjective(maxRarity = 1)
+            assertThat(rarityOf(adj.word, "A")).isLessThanOrEqualTo(1)
+        }
+    }
+
+    @Test
     fun shouldApplyRarityFilterWhenExcludeIsUsed() {
         val noun1 = repository.getRandomNoun(maxRarity = 1)
         val noun2 = repository.getRandomNoun(maxRarity = 1, exclude = setOf(noun1.word))
