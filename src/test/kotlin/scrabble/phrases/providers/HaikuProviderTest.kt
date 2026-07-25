@@ -33,4 +33,18 @@ class HaikuProviderTest {
 
         assertTrue(sentence.endsWith("."), "Sentence should end with a dot")
     }
+
+    @Test
+    fun shouldHaveSyllableCountsWithinExpectedRange() {
+        val provider = HaikuProvider(repository, 1, 5)
+        val sentence = provider.getSentence()
+
+        val lines = sentence.split(" / ").map { it.dropLast(1) } // remove trailing dot
+
+        lines.forEachIndexed { index, line ->
+            val words = line.split("\\s+".toRegex()).filter { it.isNotBlank() }
+            val totalSyllables = words.sumOf { scrabble.phrases.words.WordUtils.computeSyllableNumber(it.lowercase()) }
+            assertTrue(totalSyllables in 4..7, "Haiku part #$index has ${totalSyllables} syllables; expected 4–7. Line: '$line'")
+        }
+    }
 }
