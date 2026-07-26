@@ -4,6 +4,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
+import org.junit.jupiter.api.Assertions.assertThrows
 
 class AdjectiveTest {
 
@@ -84,5 +85,26 @@ class AdjectiveTest {
         assertThat(adj.word).isEqualTo("mare")
         assertThat(adj.feminine).isEqualTo("mare")
         assertThat(adj.feminineSyllables).isEqualTo(2)
+    }
+
+    @Test
+    fun shouldReturnNeuterFormAsFeminine() {
+        val adj = Adjective("frumos")
+        assertThat(adj.forGender(NounGender.N)).isEqualTo("frumoasă")
+        assertThat(adj.forGender(NounGender.F)).isEqualTo("frumoasă")
+        assertThat(adj.forGender(NounGender.M)).isEqualTo("frumos")
+    }
+
+    @Test
+    fun shouldDeriveFeminineCatchAllSuffix() {
+        val adj = Adjective("albastru")
+        assertThat(adj.feminine).isEqualTo("albastră")
+    }
+
+    @Test
+    fun shouldRejectBlankInputForFeminineDerivation() {
+        assertThrows(IllegalArgumentException::class.java) {
+            Adjective("")
+        }
     }
 }
