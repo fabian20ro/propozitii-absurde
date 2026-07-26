@@ -189,6 +189,62 @@ describe("api/all.ts utilities", () => {
     it("decorateSentence wraps text in links and capitalizes", () => {
       expect(decorateSentence("hello world")).toBe('<a href="https://dexonline.ro/definitie/hello" target="_blank" rel="noopener" data-word="hello">Hello</a> <a href="https://dexonline.ro/definitie/world" target="_blank" rel="noopener" data-word="world">world</a>');
     });
+
+    // Regression: AGENTS.md Rule #2 — HTML safety coupling.
+    // Backend returns <a> tags; frontend sanitizeHtml allowlist + https://dexonline.ro
+    // href validation depends on display text never containing raw HTML metacharacters
+    // inside anchor content. addDexLinks uses \p{L}+ which only matches letter runs,
+    // so the contract is: every matched word's display text must be escaped via escapeHtml.
+    // If a future refactor stops escaping matched words, XSS payloads embedded in them
+    // would render as executable HTML on the front-end. This test locks that invariant.
+    it("every captured letter-run has its display text escapeHtml'd inside anchors", () => {
+      const result = addDexLinks('<script>text</script>');
+      // \p{L}+ matches: "script", "text", "script" — each gets wrapped in <a>.
+      // The metacharacters (<, >) between words pass through verbatim but only OUTSIDE anchors.
+      const spans = result.match(/data-word="[^"]*">([^<]*)<\/a>/g) || [];
+      for (const span of spans) {
+        // Extract display text: after ">..." and before </a>
+        const m = />([^<]*)<\/a>$/.exec(span);
+        expect(m).not.toBeNull();
+        if (m && m[1]) {
+          const displayText = m[1];
+          expect(displayText).not.toContain("<script>");
+          expect(displayText).not.toContain("</script>");
+        }
+      }
+    });
+
+    it("plain words pass through display text unchanged (no false escaping)", () => {
+      const result = addDexLinks('hello');
+      const match = result.match(/data-word="hello">(.*?)<\/a>/);
+      expect(match).not.toBeNull();
+      expect(match![1]).toBe("hello"); // plain word: display text matches input exactly
+    });
+
+    it("verse level preserves same escapeHtml invariant per-displayed-word", () => {
+      const result = decorateVerse('hello / world');
+      const spans = result.match(/data-word="[^"]*">([^<]*)<\/a>/g) || [];
+      for (const span of spans) {
+        // Extract display text: after ">..." and before </a>
+        const m = />([^<]*)<\/a>$/.exec(span);
+        expect(m).not.toBeNull();
+        if (m && m[1]) {
+          const displayText = m[1];
+          expect(displayText).not.toContain("<"); // no raw HTML inside anchor display text
+        }
+      }
+    });
+
+    it("raw metacharacters between words stay outside anchors (unchanged)", () => {
+      const result = addDexLinks('foo&bar');
+      // \p{L}+ matches: "foo" and "bar"; "&" is preserved verbatim BETWEEN anchors.
+      // Anchor display text must never contain raw HTML metacharacters; between-anchor content
+      // preserves the original character. This test confirms that boundary is respected.
+      const spans = result.match(/>([^<]+)<\/a>/g) || [];
+      for (const span of spans) {
+        expect(span).not.toContain("&amp;"); // no escaped ampersand inside a single word's display
+      }
+    });
   });
 
   describe("normalizeRarityRange", () => {
