@@ -94,7 +94,6 @@ class PhraseResource {
         } catch (e1: Exception) {
             logger.warnf("Provider failed to generate sentence (attempt 1): %s", e1.message ?: "unknown")
             try {
-                Thread.sleep(50L)
                 generator()
             } catch (e2: Exception) {
                 logger.warnf("Provider failed to generate sentence (attempt 2): %s", e2.message ?: "unknown")
