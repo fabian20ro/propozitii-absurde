@@ -62,16 +62,29 @@ class RateLimitFilter : ContainerRequestFilter {
         staleKeys.forEach { requests.remove(it) }
     }
 
-    private fun extractIp(context: ContainerRequestContext): String? {
-        return context.getHeaderString("X-Forwarded-For")
-            ?.split(",")
-            ?.firstOrNull()
-            ?.trim()
-    }
-
     companion object {
         private const val WINDOW_MS = 60_000L
         private const val MAX_REQUESTS = 30
         private const val CLEANUP_THRESHOLD = 100
+
+        /** Strict IPv4 pattern: four octets of 1-3 digits separated by dots. */
+        private val IPV4_PATTERN = Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")
+
+        private fun isIpv4(value: String): Boolean {
+            if (!IPV4_PATTERN.matches(value)) return false
+            return value.split('.').all { part ->
+                val octet = part.toInt()
+                octet in 0..255
+            }
+        }
+    }
+
+    private fun extractIp(context: ContainerRequestContext): String? {
+        val candidate = context.getHeaderString("X-Forwarded-For")
+            ?.split(",")
+            ?.firstOrNull()
+            ?.trim()
+            ?: context.getHeaderString("X-Real-IP")?.trim()
+        return if (candidate != null && isIpv4(candidate)) candidate else null
     }
 }
