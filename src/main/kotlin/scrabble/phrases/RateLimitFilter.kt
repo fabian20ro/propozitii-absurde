@@ -67,6 +67,7 @@ class RateLimitFilter : ContainerRequestFilter {
             ?.split(",")
             ?.firstOrNull()
             ?.trim()
+            ?: context.getHeaderString("X-Real-IP")?.trim()
     }
 
     companion object {
