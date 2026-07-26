@@ -59,5 +59,8 @@ class WordUtilsTest {
         // Multiple apostrophes in one word — replace is global, removes all.
         assertEquals("cpast", WordUtils.fixWordCharacters("c'pas't'"))
         assertEquals("numa zis", WordUtils.fixWordCharacters("n\u2019um\u2019a zis"))
+        // Edge case: input is all apostrophes — every character gets stripped.
+        assertEquals("", WordUtils.fixWordCharacters("'''"))
+        assertEquals("", WordUtils.fixWordCharacters("\u2019\u2019\u2019"))
     }
 }
