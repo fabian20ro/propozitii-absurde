@@ -3,6 +3,8 @@ package scrabble.phrases.words
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
 
 class VerbTest {
 
@@ -37,5 +39,31 @@ class VerbTest {
     fun `rejects all-digits word`() {
         val ex = assertThrows(IllegalArgumentException::class.java) { Verb("12345") }
         assertEquals("verb word must contain at least one letter", ex.message)
+    }
+
+    @Test
+    fun `accepts digit-letter mix`() {
+        val verb = Verb("a1b")
+        assertEquals("a1b", verb.word)
+    }
+
+    @Test
+    fun `rejects pure-punctuation word`() {
+        val ex = assertThrows(IllegalArgumentException::class.java) { Verb("!@#$%") }
+        assertEquals("verb word must contain at least one letter", ex.message)
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        "!@#",
+    )
+    fun `rejects pure-punctuation word`(word: String) {
+        assertThrows(IllegalArgumentException::class.java) { Verb(word) }
+    }
+
+    @Test
+    fun `accepts accented verb word`() {
+        val verb = Verb("a\u00e2mpur")
+        assertEquals("a\u00e2mpur", verb.word)
     }
 }
