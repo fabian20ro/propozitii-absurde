@@ -19,46 +19,53 @@ class DistihProvider(
     }
 
     override fun getSentence(): String {
-        val usedNouns = mutableSetOf<String>()
-        val usedAdjs = mutableSetOf<String>()
-        val usedVerbs = mutableSetOf<String>()
+        if (minRarity > maxRarity) throw IllegalArgumentException("Invalid rarity range: min=$minRarity, max=$maxRarity — swap or align values in sentence config")
+        try {
+            val usedNouns = mutableSetOf<String>()
+            val usedAdjs = mutableSetOf<String>()
+            val usedVerbs = mutableSetOf<String>()
 
-        fun nextNoun() = run {
-            val n = repo.getRandomNoun(minRarity = minRarity, maxRarity = maxRarity, exclude = usedNouns)
-                ?: throw IllegalStateException(
-                    "No valid noun found for rarity range $minRarity..$maxRarity (excluded: ${usedNouns.size})"
-                )
-            usedNouns.add(n.word)
-            n
+            fun nextNoun() = run {
+                val n = repo.getRandomNoun(minRarity = minRarity, maxRarity = maxRarity, exclude = usedNouns)
+                    ?: throw IllegalStateException(
+                        "No valid noun found for rarity range $minRarity..$maxRarity (excluded: ${usedNouns.size})"
+                    )
+                usedNouns.add(n.word)
+                n
+            }
+
+            fun nextAdj() = run {
+                val a = repo.getRandomAdjective(minRarity = minRarity, maxRarity = maxRarity, exclude = usedAdjs)
+                    ?: throw IllegalStateException(
+                        "No valid adjective found for rarity range $minRarity..$maxRarity (excluded: ${usedAdjs.size})"
+                    )
+                usedAdjs.add(a.word)
+                a
+            }
+
+            fun nextVerb() = run {
+                val v = repo.getRandomVerb(minRarity = minRarity, maxRarity = maxRarity, exclude = usedVerbs)
+                    ?: throw IllegalStateException(
+                        "No valid verb found for rarity range $minRarity..$maxRarity (excluded: ${usedVerbs.size})"
+                    )
+                usedVerbs.add(v.word)
+                v
+            }
+
+            fun buildLine(): String {
+                val n1 = nextNoun()
+                val a1 = nextAdj()
+                val v = nextVerb()
+                val n2 = nextNoun()
+                val a2 = nextAdj()
+                return "${n1.articulated} ${a1.forGender(n1.gender)} ${v.word} ${n2.articulated} ${a2.forGender(n2.gender)}."
+            }
+
+            return "${buildLine()} / ${buildLine()}"
+        } catch (e: IllegalStateException) {
+            throw IllegalStateException(
+                "DistihProvider needs noun/adjective/verb in rarity range ${minRarity}..$maxRarity — database may be empty or misconfigured", e
+            )
         }
-
-        fun nextAdj() = run {
-            val a = repo.getRandomAdjective(minRarity = minRarity, maxRarity = maxRarity, exclude = usedAdjs)
-                ?: throw IllegalStateException(
-                    "No valid adjective found for rarity range $minRarity..$maxRarity (excluded: ${usedAdjs.size})"
-                )
-            usedAdjs.add(a.word)
-            a
-        }
-
-        fun nextVerb() = run {
-            val v = repo.getRandomVerb(minRarity = minRarity, maxRarity = maxRarity, exclude = usedVerbs)
-                ?: throw IllegalStateException(
-                    "No valid verb found for rarity range $minRarity..$maxRarity (excluded: ${usedVerbs.size})"
-                )
-            usedVerbs.add(v.word)
-            v
-        }
-
-        fun buildLine(): String {
-            val n1 = nextNoun()
-            val a1 = nextAdj()
-            val v = nextVerb()
-            val n2 = nextNoun()
-            val a2 = nextAdj()
-            return "${n1.articulated} ${a1.forGender(n1.gender)} ${v.word} ${n2.articulated} ${a2.forGender(n2.gender)}."
-        }
-
-        return "${buildLine()} / ${buildLine()}"
     }
 }
