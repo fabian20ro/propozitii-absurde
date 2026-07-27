@@ -14,7 +14,10 @@ class HaikuProvider(
 
     override fun getSentence(): String {
         val noun = repo.getRandomNounByArticulatedSyllables(5, minRarity = minRarity, maxRarity = maxRarity)
-            ?: repo.getRandomNoun(minRarity = minRarity, maxRarity = maxRarity)
+            ?: run {
+                log.debugf("HaikuProvider: no articulated_syllables=5 match; falling back to unarticulated noun query")
+                repo.getRandomNoun(minRarity = minRarity, maxRarity = maxRarity)
+            }
             ?: throw IllegalStateException("No suitable noun found within rarity range ${minRarity}–${maxRarity}")
 
         // Adjective form in line 2 must be 4 syllables (+ verb 3 = 7 total).
@@ -23,7 +26,7 @@ class HaikuProvider(
         val adj = if (noun.gender == NounGender.F) {
             repo.getRandomAdjectiveByFeminineSyllables(4, minRarity = minRarity, maxRarity = maxRarity)
                 ?: run {
-                    log.debugf("HaikuProvider: feminine_syllables column not available for %s, falling back to masculine syllable query", noun.word)
+                    log.debugf("HaikuProvider: feminine_syllables column not available for %s; falling back to masculine syllable query", noun.word)
                     repo.getRandomAdjectiveBySyllables(4, minRarity = minRarity, maxRarity = maxRarity)
                 }
         } else {
@@ -38,9 +41,13 @@ class HaikuProvider(
 
         // Second noun: articulated form has 5 syllables, distinct from first
         val noun2 = repo.getRandomNounByArticulatedSyllables(5, minRarity = minRarity, maxRarity = maxRarity, exclude = setOf(noun.word))
-            ?: repo.getRandomNoun(minRarity = minRarity, maxRarity = maxRarity, exclude = setOf(noun.word))
+            ?: run {
+                log.debugf("HaikuProvider: no articulated_syllables=5 match for %s (excluded); falling back to unarticulated noun query", noun.word)
+                repo.getRandomNoun(minRarity = minRarity, maxRarity = maxRarity, exclude = setOf(noun.word))
+            }
             ?: throw IllegalStateException("No second noun found within rarity range ${minRarity}–${maxRarity}")
 
+        log.debugf("HaikuProvider: generated '%s / %s %s / %s.'", noun.articulated, adjForm, verb.word, noun2.articulated)
         return "${noun.articulated} / $adjForm ${verb.word} / ${noun2.articulated}."
     }
 }

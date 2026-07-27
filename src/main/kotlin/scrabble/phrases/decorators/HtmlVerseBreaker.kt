@@ -3,6 +3,8 @@ package scrabble.phrases.decorators
 import scrabble.phrases.providers.ISentenceProvider
 
 class HtmlVerseBreaker(private val provider: ISentenceProvider) : ISentenceProvider {
+    private val versePattern = Regex("(<!--.*?-->|<[^>]*>)|(\\s*/\\s*)")
+
     override fun getSentence(): String {
         val text = provider.getSentence()
             ?: throw IllegalArgumentException("sentence is null")
@@ -10,7 +12,7 @@ class HtmlVerseBreaker(private val provider: ISentenceProvider) : ISentenceProvi
         // " / " → <br/> contract boundary (AGENTS.md constraint #1).
         if (text.isBlank()) return ""
 
-        return text.replace(Regex("(<!--.*?-->|<[^>]*>)|(\\s*/\\s*)")) { match ->
+        return text.replace(versePattern) { match ->
             // Preserve HTML comments and tags verbatim — never re-process already-decorated content.
             if (match.groupValues[1].isNotEmpty()) match.value else "<br/>"
         }
