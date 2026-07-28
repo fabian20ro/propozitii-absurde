@@ -233,13 +233,15 @@ class WordRepository(private val dataSource: AgroalDataSource) {
         val count = rangeCountTriple(countsByTypeArticulatedSyllablesMaxRarity, "N", articulatedSyllables, min, max)
         if (count == 0) return null
         debugSelection("count_offset_dim", "N", min, max, "dim=articulated_syllables value=$articulatedSyllables count=$count")
-        return queryNoun(
+        val result = queryNoun(
             "SELECT word, gender, syllables, rhyme, articulated FROM words WHERE type='N' AND articulated_syllables=? AND rarity_level BETWEEN ? AND ? LIMIT 1 OFFSET ?",
             articulatedSyllables,
             min,
             max,
             randomOffset(count)
         )
+            ?: throw IllegalStateException("No nouns with articulated syllables $articulatedSyllables found in database for rarity ${rarityDesc(min, max)}")
+        return result
     }
 
     fun getRandomAdjective(minRarity: Int = 1, maxRarity: Int = DEFAULT_MAX_RARITY, exclude: Set<String> = emptySet()): Adjective {
