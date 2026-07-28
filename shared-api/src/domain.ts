@@ -1,0 +1,960 @@
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
+
+export interface VercelRequestLike {
+  method?: string;
+  query: Record<string, string | string[] | undefined>;
+  headers: Record<string, string | string[] | undefined>;
+}
+
+export interface VercelResponseLike {
+  setHeader(name: string, value: string): void;
+  status(code: number): {
+    end(): unknown;
+    json(body: unknown): unknown;
+  };
+}
+
+// --- Environment validation (deferred for testability) ---
+
+const DEFAULT_ALLOWED_ORIGINS = ["https://fabian20ro.github.io"];
+
+interface SupabaseKeyResolution {
+  key: string;
+  source: "publishable" | "service-role" | "none";
+  error?: string;
+}
+
+export function resolveSupabaseKey(
+  env: Record<string, string | undefined>
+): SupabaseKeyResolution {
+  const publishable = (env.SUPABASE_PUBLISHABLE_KEY ?? "").trim();
+  if (publishable) return { key: publishable, source: "publishable" };
+
+  const serviceRole = (env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
+  const allowServiceFallback =
+    (env.ALLOW_SUPABASE_SERVICE_ROLE_FALLBACK ?? "").toLowerCase() === "true";
+  if (serviceRole && allowServiceFallback) {
+    return { key: serviceRole, source: "service-role" };
+  }
+  if (serviceRole) {
+    return {
+      key: "",
+      source: "none",
+      error:
+        "SUPABASE_SERVICE_ROLE_KEY is set but disabled for this public endpoint. " +
+        "Use SUPABASE_PUBLISHABLE_KEY (preferred).",
+    };
+  }
+  return {
+    key: "",
+    source: "none",
+    error: "Missing SUPABASE_PUBLISHABLE_KEY.",
+  };
+}
+
+export function parseAllowedOrigins(raw: string | undefined): string[] {
+  if (!raw || raw.trim().length === 0) return DEFAULT_ALLOWED_ORIGINS;
+  const origins = raw
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+  return origins.length > 0 ? origins : DEFAULT_ALLOWED_ORIGINS;
+}
+
+export function resolveCorsOrigin(origin: string | undefined, allowlist: string[]): string {
+  if (allowlist.includes("*")) return "*";
+  if (origin && allowlist.includes(origin)) return origin;
+  return allowlist[0];
+}
+
+export interface ResponseTimingHeaders {
+  serverTiming: string;
+  responseTimeMs: string;
+}
+
+export function buildResponseTimingHeaders(startedAtMs: number, finishedAtMs = Date.now()): ResponseTimingHeaders {
+  const elapsedMs = Math.max(0, finishedAtMs - startedAtMs);
+  return {
+    serverTiming: `api-all;dur=${elapsedMs}`,
+    responseTimeMs: String(elapsedMs),
+  };
+}
+
+function firstQueryValue(raw: string | string[] | undefined): string | string[] | undefined {
+  if (!raw || (typeof raw === 'string' && raw.trim().length === 0)) return undefined;
+  if (Array.isArray(raw)) return raw.map(s => s.trim()).filter(Boolean);
+  if (typeof raw === 'string' && raw.includes(',')) {
+    const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
+    return parts.length > 0 ? parts : undefined;
+  }
+  return raw;
+}
+
+export interface NormalizedRarityRange {
+  minR: number;
+  maxR: number;
+}
+
+export function normalizeRarityRange(
+  minRarity: string | string[] | undefined,
+  rarity: string | string[] | undefined
+): NormalizedRarityRange {
+  const getNum = (v: string | string[] | undefined): number => {
+    const parsed = firstQueryValue(v);
+    if (!parsed) return NaN;
+    const val = Array.isArray(parsed) ? parsed[parsed.length - 1] : parsed;
+    return Number(val);
+  };
+  const minVal = getNum(minRarity);
+  const maxVal = getNum(rarity);
+  let minC: number, maxC: number;
+  if (isNaN(minVal) && isNaN(maxVal)) {
+    [minC, maxC] = [1, 2];
+  } else if (isNaN(minVal)) {
+    minC = 1;
+    maxC = Math.max(1, Math.min(5, maxVal));
+  } else if (isNaN(maxVal)) {
+    minC = Math.max(1, Math.min(5, minVal));
+    maxC = 5;
+  } else {
+    minC = Math.max(1, Math.min(5, minVal));
+    maxC = Math.max(1, Math.min(5, maxVal));
+    if (minC > maxC) [minC, maxC] = [maxC, minC];
+  }
+  return { minR: minC, maxR: maxC };
+}
+
+export function validateSupabaseUrl(raw: string | undefined): string | undefined {
+  const supabaseUrl = (raw ?? "").trim();
+  if (!supabaseUrl) return "Missing SUPABASE_URL.";
+  try {
+    const parsed = new URL(supabaseUrl);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return "Invalid SUPABASE_URL: must use http/https.";
+    }
+  } catch {
+    return "Invalid SUPABASE_URL: must be a valid HTTP or HTTPS URL.";
+  }
+  return undefined;
+}
+
+interface SupabaseInitResolution {
+  keyResolution: SupabaseKeyResolution;
+  error?: string;
+}
+
+export function resolveSupabaseInit(
+  env: Record<string, string | undefined>
+): SupabaseInitResolution {
+  const keyResolution = resolveSupabaseKey(env);
+  const urlError = validateSupabaseUrl(env.SUPABASE_URL);
+  if (urlError) return { keyResolution, error: urlError };
+  if (!keyResolution.key) {
+    return {
+      keyResolution,
+      error: keyResolution.error ?? "Missing Supabase API key.",
+    };
+  }
+  return { keyResolution };
+}
+
+let runtimeEnv: Record<string, string | undefined> = {};
+let runtimeFetch: typeof fetch | undefined;
+let initResolution = resolveSupabaseInit(runtimeEnv);
+let allowedOrigins = parseAllowedOrigins(runtimeEnv.ALLOWED_ORIGINS);
+
+let supabase: SupabaseClient | null = null;
+let supabaseError = initResolution.error;
+let supabaseInitAttempted = false;
+
+function getSupabaseClient(): SupabaseClient | null {
+  if (supabaseInitAttempted) return supabase;
+  supabaseInitAttempted = true;
+
+  if (initResolution.keyResolution.source === "service-role") {
+    console.warn(
+      "[security] api/all.ts uses SUPABASE_SERVICE_ROLE_KEY fallback; prefer SUPABASE_PUBLISHABLE_KEY."
+    );
+  }
+
+  if (supabaseError) {
+    console.error(`[security] Supabase initialization failed: ${supabaseError}`);
+    return null;
+  }
+
+  try {
+    const supabaseUrl = (runtimeEnv.SUPABASE_URL ?? "").trim();
+    supabase = createClient(supabaseUrl, initResolution.keyResolution.key, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false,
+      },
+      global: runtimeFetch ? { fetch: runtimeFetch } : undefined,
+    });
+    return supabase;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "unknown error";
+    supabaseError = `Supabase client initialization failed: ${msg}`;
+    return null;
+  }
+}
+
+// --- Per-generator timeout (prevents a single slow generator from exhausting maxDuration) ---
+
+let GENERATOR_TIMEOUT_MS = 7000;
+
+export function configureRuntime(env: Record<string, string | undefined>, fetchImplementation?: typeof fetch): void {
+  runtimeEnv = { ...env };
+  runtimeFetch = fetchImplementation;
+  initResolution = resolveSupabaseInit(runtimeEnv);
+  allowedOrigins = parseAllowedOrigins(runtimeEnv.ALLOWED_ORIGINS);
+  supabase = null;
+  supabaseError = initResolution.error;
+  supabaseInitAttempted = false;
+  GENERATOR_TIMEOUT_MS = Number(runtimeEnv.GENERATOR_TIMEOUT_MS) || 7000;
+}
+
+function withTimeout<T>(promise: Promise<T>, fallback: T, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+  });
+  return Promise.race([promise.finally(() => clearTimeout(timer)), timeout]);
+}
+
+export const DEXONLINE_URL = "https://dexonline.ro/definitie/";
+export const DEXONLINE_ANCHOR_ATTRS = ["href", "target", "rel", "data-word"] as const;
+export const DEXONLINE_ANCHOR_TARGET = "_blank";
+export const DEXONLINE_ANCHOR_REL = "noopener";
+
+/**
+ * IMPORTANT: Verse delimiter contract (from AGENTS.md).
+ * Multi-line verses use literal " / " as a delimiter.
+ * Breaking this string silently kills line breaks in the frontend.
+ */
+const UNSATISFIABLE =
+  "Nu există suficiente cuvinte pentru nivelul de raritate ales.";
+
+export class ConstraintUnsatisfiedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConstraintUnsatisfiedError";
+  }
+}
+
+export function failConstraint(message: string): never {
+  throw new ConstraintUnsatisfiedError(message);
+}
+
+/**
+ * Distinct error type for unexpected system failures (network, DB down, etc.)
+ * so the frontend can distinguish them from legitimate "no data" responses.
+ */
+export class InternalServerError extends Error {
+  constructor(original: unknown) {
+    const msg = original instanceof Error ? original.message : String(original ?? "unknown");
+    super(msg);
+    this.name = "InternalServerError";
+  }
+}
+
+/**
+ * Wraps a generator function with timeout + error boundary.
+ * ConstraintUnsatisfiedError → UNSATISFIABLE (legitimate no-data).
+ * Any other error → InternalServerError (system failure, frontend should show "error").
+ */
+export function safe(
+  fn: () => Promise<string>
+): Promise<string | InternalServerError> {
+  const startedAtMs = Date.now();
+  return withTimeout(fn(), UNSATISFIABLE, GENERATOR_TIMEOUT_MS)
+    .then((result) => result)
+    .catch((err) => {
+      if (err instanceof ConstraintUnsatisfiedError) return UNSATISFIABLE;
+      console.error("Sentence generation failed:", err);
+      return new InternalServerError(err);
+    });
+}
+
+// --- Types ---
+
+interface Noun {
+  word: string;
+  gender: string;
+  syllables: number;
+  rhyme: string;
+  articulated: string;
+}
+
+export interface Adjective {
+  word: string;
+  syllables: number;
+  rhyme: string;
+  feminine: string;
+  feminine_syllables: number | null;
+}
+
+interface Verb {
+  word: string;
+  syllables: number;
+  rhyme: string;
+}
+
+type WordRow = Noun | Adjective | Verb;
+
+export interface QueryFilter {
+  column: string;
+  op: "eq" | "gte" | "lte" | "like" | "neq" | "in";
+  value: string | number | (string | number)[];
+}
+
+export function adjForGender(adj: Adjective, gender: string): string {
+  return gender.toUpperCase() === "F" ? adj.feminine : adj.word;
+}
+
+// --- Per-request count cache (avoids redundant count queries for same filter combos) ---
+// Cache key intentionally excludes `neq` (exclude) filters because exclude sets
+// are small (≤6 words) relative to the pool. If a cached count causes an offset
+// miss (data query returns null), randomRow retries once with a fresh count.
+
+type CountCache = Map<string, number>;
+
+function countCacheKey(filters: QueryFilter[]): string {
+  return filters
+    .map((f) => `${f.column}:${f.op}:${Array.isArray(f.value) ? f.value.join(',') : f.value}`)
+    .sort()
+    .join("|");
+}
+
+// --- Generic random-row helper (single count + single fetch) ---
+
+async function randomRow<T extends WordRow>(
+  select: string,
+  filters: QueryFilter[],
+  cache?: CountCache
+): Promise<T | null> {
+  const client = getSupabaseClient();
+  if (!client) throw new Error(supabaseError ?? "Supabase client unavailable.");
+
+  // Supabase returns `{ data, error }` on every query. Any transient DB or
+  // network error would otherwise be silently dropped (returning null →
+  // "no data" instead of surfacing the failure to the operator). Check `error`
+  // after each await and throw so it propagates through safe() into InternalServerError.
+  function requireSuccess(result: { data?: unknown; error?: unknown }): void {
+    if (result.error) throw result.error instanceof Error ? result.error : new Error(String(result.error));
+  }
+
+  const cKey = countCacheKey(filters);
+  const usedCachedCount = cache?.has(cKey) ?? false;
+  let count: number | null | undefined = cache?.get(cKey);
+
+  if (count === undefined) {
+    let countQ = client.from("words").select("word", { count: "exact", head: true });
+    for (const f of filters) countQ = applyFilter(countQ, f);
+    const resp = await countQ;
+    requireSuccess(resp);
+    count = resp.count;
+    if (count != null && cache) cache.set(cKey, count);
+  }
+  if (!count) return null;
+
+  // Fetch one at random offset
+  const offset = Math.floor(Math.random() * count);
+  let dataQ = client.from("words").select(select);
+  for (const f of filters) dataQ = applyFilter(dataQ, f);
+  const resp = await dataQ.range(offset, offset).limit(1);
+  requireSuccess(resp);
+  const { data } = resp;
+
+  // If data miss and we used a cached count (possibly stale due to exclude
+  // filters), retry once with a fresh count to handle small-pool edge cases.
+  if ((!data || data.length === 0) && usedCachedCount) {
+    cache?.delete(cKey);
+    let freshQ = client.from("words").select("word", { count: "exact", head: true });
+    for (const f of filters) freshQ = applyFilter(freshQ, f);
+    const freshResp = await freshQ;
+    requireSuccess(freshResp);
+    const freshCount = freshResp.count;
+    if (!freshCount) return null;
+    if (cache) cache.set(cKey, freshCount);
+    const retryOffset = Math.floor(Math.random() * freshCount);
+    let retryQ = client.from("words").select(select).range(retryOffset, retryOffset).limit(1);
+    for (const f of filters) retryQ = applyFilter(retryQ, f);
+    const retryResp = await retryQ;
+    requireSuccess(retryResp);
+    const { data: retryData } = retryResp;
+    if (!retryData || retryData.length === 0) return null;
+    return retryData[0] as unknown as T;
+  }
+
+  if (!data || data.length === 0) return null;
+  return data[0] as unknown as T;
+}
+
+export function applyFilter(q: any, f: QueryFilter): any {
+  switch (f.op) {
+    case "eq":
+      return Array.isArray(f.value) ? q.in(f.column, f.value) : q.eq(f.column, f.value);
+    case "gte": return q.gte(f.column, f.value);
+    case "lte": return q.lte(f.column, f.value);
+    case "like": return q.like(f.column, f.value);
+    case "neq": return q.neq(f.column, f.value);
+    case "in": return q.in(f.column, f.value);
+  }
+  throw new Error(`Unknown filter operator: "${f.op}" on column "${f.column}".`);
+}
+
+function rarityFilters(minR: number, maxR: number): QueryFilter[] {
+  return [
+    { column: "rarity_level", op: "gte", value: minR },
+    { column: "rarity_level", op: "lte", value: maxR },
+  ];
+}
+
+function excludeFilters(exclude: string[]): QueryFilter[] {
+  return exclude.map((w) => ({ column: "word", op: "neq" as const, value: w }));
+}
+
+// --- Word query functions ---
+
+const NOUN_SELECT = "word, gender, syllables, rhyme, articulated";
+const ADJ_SELECT = "word, syllables, rhyme, feminine, feminine_syllables";
+const VERB_SELECT = "word, syllables, rhyme";
+
+async function randomNoun(
+  minR: number, maxR: number, exclude: string[] = [], cache?: CountCache
+): Promise<Noun> {
+  const row = await randomRow<Noun>(NOUN_SELECT, [
+    { column: "type", op: "eq", value: "N" },
+    ...rarityFilters(minR, maxR),
+    ...excludeFilters(exclude),
+  ], cache);
+  if (!row) failConstraint("No nouns found");
+  return row;
+}
+
+async function randomNounByArticulatedSyllables(
+  syllables: number, minR: number, maxR: number, exclude: string[] = [], cache?: CountCache
+): Promise<Noun | null> {
+  return randomRow<Noun>(NOUN_SELECT, [
+    { column: "type", op: "eq", value: "N" },
+    { column: "articulated_syllables", op: "eq", value: syllables },
+    ...rarityFilters(minR, maxR),
+    ...excludeFilters(exclude),
+  ], cache);
+}
+
+async function randomNounByPrefix(
+  prefix: string, minR: number, maxR: number, exclude: string[] = [], cache?: CountCache
+): Promise<Noun | null> {
+  return randomRow<Noun>(NOUN_SELECT, [
+    { column: "type", op: "eq", value: "N" },
+    { column: "word", op: "like", value: `${prefix}%` },
+    ...rarityFilters(minR, maxR),
+    ...excludeFilters(exclude),
+  ], cache);
+}
+
+async function randomAdj(
+  minR: number, maxR: number, exclude: string[] = [], cache?: CountCache
+): Promise<Adjective> {
+  const row = await randomRow<Adjective>(ADJ_SELECT, [
+    { column: "type", op: "eq", value: "A" },
+    ...rarityFilters(minR, maxR),
+    ...excludeFilters(exclude),
+  ], cache);
+  if (!row) failConstraint("No adjectives found");
+  return row;
+}
+
+async function randomAdjBySyllables(
+  syllables: number, minR: number, maxR: number, cache?: CountCache
+): Promise<Adjective | null> {
+  return randomRow<Adjective>(ADJ_SELECT, [
+    { column: "type", op: "eq", value: "A" },
+    { column: "syllables", op: "eq", value: syllables },
+    ...rarityFilters(minR, maxR),
+  ], cache);
+}
+
+async function randomAdjByFeminineSyllables(
+  feminineSyllables: number, minR: number, maxR: number, cache?: CountCache
+): Promise<Adjective | null> {
+  return randomRow<Adjective>(ADJ_SELECT, [
+    { column: "type", op: "eq", value: "A" },
+    { column: "feminine_syllables", op: "eq", value: feminineSyllables },
+    ...rarityFilters(minR, maxR),
+  ], cache);
+}
+
+async function randomAdjByPrefix(
+  prefix: string, minR: number, maxR: number, cache?: CountCache
+): Promise<Adjective | null> {
+  return randomRow<Adjective>(ADJ_SELECT, [
+    { column: "type", op: "eq", value: "A" },
+    { column: "word", op: "like", value: `${prefix}%` },
+    ...rarityFilters(minR, maxR),
+  ], cache);
+}
+
+async function randomAdjByRhyme(
+  rhyme: string, minR: number, maxR: number, exclude: string[] = [], cache?: CountCache
+): Promise<Adjective> {
+  const row = await randomRow<Adjective>(ADJ_SELECT, [
+    { column: "type", op: "eq", value: "A" },
+    { column: "rhyme", op: "eq", value: rhyme },
+    ...rarityFilters(minR, maxR),
+    ...excludeFilters(exclude),
+  ], cache);
+  if (!row) failConstraint("No adjectives found");
+  return row;
+}
+
+async function randomVerb(
+  minR: number, maxR: number, exclude: string[] = [], cache?: CountCache
+): Promise<Verb> {
+  const row = await randomRow<Verb>(VERB_SELECT, [
+    { column: "type", op: "eq", value: "V" },
+    ...rarityFilters(minR, maxR),
+    ...excludeFilters(exclude),
+  ], cache);
+  if (!row) failConstraint("No verbs found");
+  return row;
+}
+
+async function randomVerbBySyllables(
+  syllables: number, minR: number, maxR: number, cache?: CountCache
+): Promise<Verb | null> {
+  return randomRow<Verb>(VERB_SELECT, [
+    { column: "type", op: "eq", value: "V" },
+    { column: "syllables", op: "eq", value: syllables },
+    ...rarityFilters(minR, maxR),
+  ], cache);
+}
+
+async function randomVerbByRhyme(
+  rhyme: string, minR: number, maxR: number, exclude: string[] = [], cache?: CountCache
+): Promise<Verb | null> {
+  return randomRow<Verb>(VERB_SELECT, [
+    { column: "type", op: "eq", value: "V" },
+    { column: "rhyme", op: "eq", value: rhyme },
+    ...rarityFilters(minR, maxR),
+    ...excludeFilters(exclude),
+  ], cache);
+}
+
+async function randomVerbByPrefix(
+  prefix: string, minR: number, maxR: number, cache?: CountCache
+): Promise<Verb | null> {
+  return randomRow<Verb>(VERB_SELECT, [
+    { column: "type", op: "eq", value: "V" },
+    { column: "word", op: "like", value: `${prefix}%` },
+    ...rarityFilters(minR, maxR),
+  ], cache);
+}
+
+// --- Tautogram: batch prefix probing (3 queries total) ---
+
+const PREFIX_SAMPLE_SIZE = 5;
+
+async function randomPrefixWithAllTypes(
+  minR: number, maxR: number
+): Promise<string | null> {
+  const client = getSupabaseClient();
+  if (!client) throw new Error(supabaseError ?? "Supabase client unavailable.");
+
+  // 1) Pick a few random nouns to get candidate two-letter prefixes
+  const { count: nounTotal } = await client
+    .from("words").select("word", { count: "exact", head: true })
+    .eq("type", "N").gte("rarity_level", minR).lte("rarity_level", maxR);
+  if (!nounTotal) return null;
+
+  const offset = Math.floor(Math.random() * Math.max(1, nounTotal - PREFIX_SAMPLE_SIZE));
+  const { data: sampleNouns } = await client
+    .from("words").select("word")
+    .eq("type", "N").gte("rarity_level", minR).lte("rarity_level", maxR)
+    .range(offset, offset + PREFIX_SAMPLE_SIZE - 1).limit(PREFIX_SAMPLE_SIZE);
+  if (!sampleNouns || sampleNouns.length === 0) return null;
+
+  const prefixes = [...new Set(
+    sampleNouns.map((n) => n.word.substring(0, 2)).filter((p) => p.length === 2)
+  )];
+  if (prefixes.length === 0) return null;
+
+  // 2) Single query: fetch type + prefix for all words matching any candidate prefix
+  const orFilter = prefixes.map((p) => `word.like.${p}%`).join(",");
+  const { data: candidates } = await client
+    .from("words").select("word, type")
+    .gte("rarity_level", minR).lte("rarity_level", maxR)
+    .or(orFilter);
+  if (!candidates) return null;
+
+  // 3) Count types per prefix client-side
+  const stats = new Map<string, { types: Set<string>; nounCount: number }>();
+  for (const c of candidates) {
+    if (c.word.length < 2) continue;
+    const p = c.word.substring(0, 2);
+    if (!stats.has(p)) stats.set(p, { types: new Set(), nounCount: 0 });
+    const s = stats.get(p)!;
+    s.types.add(c.type);
+    if (c.type === "N") s.nounCount++;
+  }
+
+  const valid = prefixes.filter((p) => {
+    const s = stats.get(p);
+    return s && s.types.size === 3 && s.nounCount >= 2;
+  });
+  if (valid.length === 0) return null;
+  return valid[Math.floor(Math.random() * valid.length)];
+}
+
+// --- Mirror: bulk rhyme group discovery (1-2 queries instead of up to 45) ---
+
+async function findTwoVerbRhymeGroups(
+  minR: number, maxR: number
+): Promise<[string, string] | null> {
+  const client = getSupabaseClient();
+  if (!client) throw new Error(supabaseError ?? "Supabase client unavailable.");
+
+  // Fetch all verb rhymes in rarity range in a single bulk query,
+  // then group client-side. Paginate to handle Supabase's 1000-row default.
+  const allRhymes: string[] = [];
+  let from = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await client
+      .from("words")
+      .select("rhyme")
+      .eq("type", "V")
+      .gte("rarity_level", minR)
+      .lte("rarity_level", maxR)
+      .range(from, from + pageSize - 1);
+
+    if (error || !data || data.length === 0) break;
+    for (const row of data) allRhymes.push(row.rhyme);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+
+  if (allRhymes.length === 0) return null;
+
+  // Count occurrences per rhyme
+  const rhymeCounts = new Map<string, number>();
+  for (const r of allRhymes) {
+    rhymeCounts.set(r, (rhymeCounts.get(r) ?? 0) + 1);
+  }
+
+  // Filter to rhymes with 2+ verbs
+  const validRhymes = [...rhymeCounts.entries()]
+    .filter(([, count]) => count >= 2)
+    .map(([rhyme]) => rhyme);
+
+  if (validRhymes.length < 2) return null;
+
+  // Pick two distinct rhymes at random
+  const i1 = Math.floor(Math.random() * validRhymes.length);
+  [validRhymes[i1], validRhymes[validRhymes.length - 1]] =
+    [validRhymes[validRhymes.length - 1], validRhymes[i1]];
+  const pick1 = validRhymes[validRhymes.length - 1];
+  const i2 = Math.floor(Math.random() * (validRhymes.length - 1));
+  const pick2 = validRhymes[i2];
+
+  return [pick1, pick2];
+}
+
+// --- Decorators ---
+
+/**
+ * Safe timestamp formatter. Returns ISO string or falls back to a sentinel
+ * if Date is somehow unavailable in the runtime (e.g. test env mock).
+ */
+export function safeTimestamp(): string {
+  try {
+    return new Date().toISOString();
+  } catch {
+    return "1970-01-01T00:00:00.000Z";
+  }
+}
+
+export function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+export function addDexLinks(sentence: string): string {
+  return sentence.replace(/\p{L}+/gu, (w) => {
+    const encoded = encodeURIComponent(w.toLowerCase());
+    return `<a href="${DEXONLINE_URL}${encoded}" target="${DEXONLINE_ANCHOR_TARGET}" rel="${DEXONLINE_ANCHOR_REL}" data-word="${encoded}">${escapeHtml(w)}</a>`;
+  });
+}
+
+export function capitalizeFirst(s: string): string {
+  if (!s) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+export function cleaningDecorator(sentence: string): string {
+  return sentence.trim().replace(/\s+/g, ' ');
+}
+
+export function decorateVerse(sentence: string): string {
+  const hasDelimiter = sentence.includes(" / ");
+  const lines = sentence.split(/\s*\/\s*/);
+  const decoratedLines = lines.map((line) => addDexLinks(capitalizeFirst(line.trim())));
+  const result = decoratedLines.join("<br/>");
+
+  // Verse delimiter invariant: if input contains " / ", output must use <br/> and never contain literal " / ".
+  // See AGENTS.md Rule #1 — breaking this string silently kills line breaks in the frontend.
+  if (hasDelimiter && result.includes(" / ")) {
+    throw new Error("decorateVerse: ' / ' delimiter leaked into decorated output");
+  }
+
+  return result;
+}
+
+export function decorateSentence(sentence: string): string {
+  return addDexLinks(capitalizeFirst(sentence.trim()));
+}
+
+// --- Sentence providers ---
+
+async function genComparison(minR: number, maxR: number, cache?: CountCache): Promise<string> {
+  const [n1, adj, verb] = await Promise.all([
+    randomNoun(minR, maxR, [], cache),
+    randomAdj(minR, maxR, [], cache),
+    randomVerb(minR, maxR, [], cache),
+  ]);
+  const n2 = await randomNoun(minR, maxR, [n1.word], cache);
+  const raw = `${n1.articulated} / ${adjForGender(adj, n1.gender)} ${verb.word} / ${n2.articulated}.`;
+  return decorateSentence(raw);
+}
+
+async function genDefinition(minR: number, maxR: number, cache?: CountCache): Promise<string> {
+  const [defined, adj, verb] = await Promise.all([
+    randomNoun(minR, maxR, [], cache),
+    randomAdj(minR, maxR, [], cache),
+    randomVerb(minR, maxR, [], cache),
+  ]);
+  const noun = await randomNoun(minR, maxR, [defined.word], cache);
+  const obj = await randomNoun(minR, maxR, [defined.word, noun.word], cache);
+  const raw = `${defined.word.toUpperCase()}: ${noun.articulated} ${adjForGender(adj, noun.gender)} are ${verb.word} ${obj.articulated}.`;
+  return decorateSentence(raw);
+}
+
+async function genDistih(minR: number, maxR: number, cache?: CountCache): Promise<string> {
+  const usedN: string[] = [];
+  const usedA: string[] = [];
+  const usedV: string[] = [];
+
+  async function buildLine() {
+    const [n1, a1, v] = await Promise.all([
+      randomNoun(minR, maxR, usedN, cache),
+      randomAdj(minR, maxR, usedA, cache),
+      randomVerb(minR, maxR, usedV, cache),
+    ]);
+    usedN.push(n1.word);
+    usedA.push(a1.word);
+    usedV.push(v.word);
+    const [n2, a2] = await Promise.all([
+      randomNoun(minR, maxR, usedN, cache),
+      randomAdj(minR, maxR, usedA, cache),
+    ]);
+    usedN.push(n2.word);
+    usedA.push(a2.word);
+    return `${n1.articulated} ${adjForGender(a1, n1.gender)} ${v.word}.`;
+  }
+
+  const l1 = await buildLine();
+  const l2 = await buildLine();
+  return decorateVerse(`${l1} / ${l2}`);
+}
+
+async function genHaiku(minR: number, maxR: number, cache?: CountCache): Promise<string> {
+  const noun =
+    (await randomNounByArticulatedSyllables(5, minR, maxR, [], cache)) ||
+    (await randomNoun(minR, maxR, [], cache));
+  // Adjective form must be 4 syllables; query by feminine_syllables for feminine nouns.
+  // Falls back to masculine-syllable query if feminine_syllables is not yet backfilled.
+  const adjPromise = noun.gender === "F"
+    ? randomAdjByFeminineSyllables(4, minR, maxR, cache)
+        .then((a) => a ?? randomAdjBySyllables(3, minR, maxR, cache))
+    : randomAdjBySyllables(4, minR, maxR, cache);
+  const [adj, verb, noun2] = await Promise.all([
+    adjPromise,
+    randomVerbBySyllables(3, minR, maxR, cache),
+    randomNounByArticulatedSyllables(5, minR, maxR, [noun.word], cache).then(
+      (n2) => n2 || randomNoun(minR, maxR, [noun.word], cache)
+    ),
+  ]);
+  if (!adj) failConstraint("No adj with required syllables");
+  if (!verb) failConstraint("No verb with 3 syllables");
+  const raw = `${noun.articulated} / ${adjForGender(adj, noun.gender)} ${verb.word} / ${noun2.articulated}.`;
+  return cleaningDecorator(decorateVerse(raw));
+}
+
+async function genMirror(minR: number, maxR: number, cache?: CountCache): Promise<string> {
+  const rhymes = await findTwoVerbRhymeGroups(minR, maxR);
+  if (!rhymes) failConstraint("No rhyme groups");
+  const [rhymeA, rhymeB] = rhymes;
+
+  const usedN: string[] = [];
+  const usedA: string[] = [];
+  const usedV: string[] = [];
+
+  async function buildLine(rhyme: string, punct: string): Promise<string> {
+    const [n, a, v] = await Promise.all([
+      randomNoun(minR, maxR, usedN, cache),
+      randomAdj(minR, maxR, usedA, cache),
+      randomVerbByRhyme(rhyme, minR, maxR, usedV, cache),
+    ]);
+    if (!v) failConstraint(`No verb for rhyme ${rhyme}`);
+    usedN.push(n.word);
+    usedA.push(a.word);
+    usedV.push(v.word);
+    return `${n.articulated} ${adjForGender(a, n.gender)} ${v.word}${punct}`;
+  }
+
+  const l1 = await buildLine(rhymeA, ",");
+  const l2 = await buildLine(rhymeB, ",");
+  const l3 = await buildLine(rhymeB, ",");
+  const l4 = await buildLine(rhymeA, ".");
+  return decorateVerse(`${l1} / ${l2} / ${l3} / ${l4}`);
+}
+
+async function genTautogram(minR: number, maxR: number, cache?: CountCache): Promise<string> {
+  const prefix = await randomPrefixWithAllTypes(minR, maxR);
+  if (!prefix) failConstraint("No valid prefix");
+  const [n1, adj, verb] = await Promise.all([
+    randomNounByPrefix(prefix, minR, maxR, [], cache),
+    randomAdjByPrefix(prefix, minR, maxR, cache),
+    randomVerbByPrefix(prefix, minR, maxR, cache),
+  ]);
+  if (!n1) failConstraint("No noun for prefix");
+  if (!adj) failConstraint("No adj for prefix");
+  if (!verb) failConstraint("No verb for prefix");
+  const n2 = await randomNounByPrefix(prefix, minR, maxR, [n1.word], cache);
+  if (!n2) failConstraint("No 2nd noun");
+  const raw = `${n1.articulated} / ${adjForGender(adj, n1.gender)} ${verb.word} / ${n2.articulated}.`;
+  return decorateSentence(raw);
+}
+
+async function genMinimalist(minR: number, maxR: number, cache?: CountCache): Promise<string> {
+  const noun = await randomNoun(minR, maxR, [], cache);
+  return decorateSentence(noun.articulated);
+}
+
+// --- Main handler ---
+
+export default async function handler(req: VercelRequestLike, res: VercelResponseLike) {
+  const startedAtMs = Date.now();
+  const setTimingHeaders = () => {
+    const timing = buildResponseTimingHeaders(startedAtMs);
+    res.setHeader("Server-Timing", timing.serverTiming);
+    res.setHeader("X-Response-Time-Ms", timing.responseTimeMs);
+  };
+
+  const reqOrigin = Array.isArray(req.headers.origin)
+    ? req.headers.origin[0]
+    : req.headers.origin;
+  res.setHeader("Access-Control-Allow-Origin", resolveCorsOrigin(reqOrigin, allowedOrigins));
+  res.setHeader("Vary", "Origin");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Max-Age", "86400");
+
+  if (req.method === "OPTIONS") {
+    setTimingHeaders();
+    return res.status(204).end();
+  }
+  if (req.method !== "GET") {
+    setTimingHeaders();
+    return res.status(405).json({ error: "Method Not Allowed" });
+  }
+
+  // System failure (DB down, config missing) → 503. Frontend distinguishes
+  // from legitimate "no data" by checking for InternalServerError at 503 vs
+  // UNSATISFIABLE strings at 2xx.
+  if (!getSupabaseClient()) {
+    setTimingHeaders();
+    return res.status(503).json({
+      error: new InternalServerError(supabaseError ?? "Missing SUPABASE_URL or Supabase API key").message,
+      details: [supabaseError ?? "Missing SUPABASE_URL or Supabase API key"],
+    });
+  }
+
+  const minRarity = req.query.minRarity ?? req.query.min_rarity;
+  const maxRarity = req.query.rarity ?? req.query.max_rarity;
+  const { minR, maxR } = normalizeRarityRange(minRarity, maxRarity);
+
+  const cache: CountCache = new Map();
+
+  const results: Record<string, string | InternalServerError> = {
+    haiku: UNSATISFIABLE,
+    distih: UNSATISFIABLE,
+    comparison: UNSATISFIABLE,
+    definition: UNSATISFIABLE,
+    tautogram: UNSATISFIABLE,
+    mirror: UNSATISFIABLE,
+    minimalist: UNSATISFIABLE,
+    timestamp: safeTimestamp(),
+  };
+
+  const taskMap: Record<string, () => Promise<string>> = {
+    haiku: () => genHaiku(minR, maxR, cache),
+    distih: () => genDistih(minR, maxR, cache),
+    comparison: () => genComparison(minR, maxR, cache),
+    definition: () => genDefinition(minR, maxR, cache),
+    tautogram: () => genTautogram(minR, maxR, cache),
+    mirror: () => genMirror(minR, maxR, cache),
+    minimalist: () => genMinimalist(minR, maxR, cache),
+  };
+
+  const taskMapKeys = Object.keys(taskMap);
+  const rawType = Array.isArray(req.query.type) ? req.query.type[0] : req.query.type;
+  if (rawType !== undefined && !taskMapKeys.includes(rawType)) {
+    setTimingHeaders();
+    return res.status(400).json({ error: `Invalid type. Valid options: ${taskMapKeys.join(", ")}.` });
+  }
+
+  const tasks = Object.entries(taskMap)
+    .filter(([key]) => !rawType || rawType === key)
+    .map(async ([key, fn]) => {
+      const result = await safe(fn);
+      results[key] = result;
+    });
+
+  try {
+    await Promise.all(tasks);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err ?? "unknown");
+    console.error("Sentence generation failed:", msg, err);
+    setTimingHeaders();
+    return res.status(500).json({ error: new InternalServerError(err).message });
+  }
+
+  // Post-task gate: escalate system failures (InternalServerError) to non-2xx.
+  // Legitimate "no data" responses from ConstraintUnsatisfiedError stay as UNSATISFIABLE strings in the envelope —
+  // the frontend distinguishes them by checking for InternalServerError instances at status 503.
+  const errors = taskMapKeys.map((k) => {
+    const r = results[k];
+    if (r instanceof InternalServerError) return r.message;
+    return null;
+  }).filter(Boolean);
+
+  if (errors.length > 0) {
+    setTimingHeaders();
+    return res.status(503).json({
+      error: "Sentence generation failed",
+      details: errors,
+    });
+  }
+
+  // Cache-Control is governed by CacheControlFilter (must-revalidate + public) —
+  // do NOT override here; doing so silently drops the must-revalidate directive.
+  setTimingHeaders();
+  return res.status(200).json(results);
+}

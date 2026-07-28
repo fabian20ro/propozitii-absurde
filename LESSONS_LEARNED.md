@@ -27,7 +27,7 @@ Obsolete lessons move to Archive section at bottom (with date and reason). Never
 
 **[2026-02-12]** minRarity required repository-wide SQL changes — Adding `minRarity` required repository-wide SQL updates from `<=` to range filtering (`BETWEEN min AND max`) and careful cache handling.
 
-**[2026-02-18]** Supabase SDK has no query retries — Supabase JS SDK v2 has **no built-in PostgREST query retries** — slow Vercel responses were caused by excessive sequential HTTP round-trips (up to 69 for `genMirror`), not retry backoff. Mitigations: (1) disable auth/realtime in `createClient` options for serverless, (2) cache counts per request via `CountCache`, (3) replace iterative rhyme-group probing with bulk fetch + client-side grouping, (4) parallelize independent queries within generators via `Promise.all`, (5) add per-generator timeouts via `Promise.race` to prevent one slow generator from exhausting the 10s `maxDuration`.
+**[2026-07-29]** Supabase transient retries do not replace query-efficiency work — Current Supabase clients retry eligible transient GET/HEAD failures, but excessive sequential PostgREST round-trips still dominate latency. Keep per-request count caching, bulk fetch/grouping, parallel independent queries, and bounded generator timeouts.
 
 **[2026-02-24]** `/api/all` is the primary frontend fetch path — Forgetting this when refactoring endpoints breaks the frontend silently.
 
@@ -130,6 +130,8 @@ Obsolete lessons move to Archive section at bottom (with date and reason). Never
 ---
 
 ## Archive
+
+**[Archived 2026-07-29] [2026-02-18]** Supabase SDK has no query retries — Obsolete after Supabase added automatic transient GET/HEAD retries. The query-efficiency mitigations remain valid and are preserved in the current architecture lesson above.
 
 <!-- Format: **[YYYY-MM-DD] Archived [YYYY-MM-DD]** Title — Reason for archival -->
 

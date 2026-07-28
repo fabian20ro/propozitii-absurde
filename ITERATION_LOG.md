@@ -207,3 +207,10 @@
 **Outcome:** Success — maintainers and agents can begin the module migration against a public, pinned contract.
 **Insight:** Public module repositories should pin both a release and schema digest; public merges must remain separate from private source-lock promotion.
 **Promoted to Lessons Learned:** Yes
+## 2026-07-29 — Provider-neutral shared API module
+
+- Published contract v2.0.0 and pinned `shared-api/module.json`.
+- Moved the TypeScript sentence generator into `shared-api/src/domain.ts`; the public Vercel file is now a thin adapter instead of a second implementation.
+- Added the Web `Request`/`Response` factory, injected Supabase transport, publishable-key-only manifest, independent lockfile, contract tests and Worker-compatible browser bundle check.
+- Verified 310 existing tests plus shared module tests/typecheck/build.
+- Updated the obsolete Supabase retry lesson: current clients retry eligible transient GET/HEAD failures; round-trip reduction remains necessary.
