@@ -23,4 +23,15 @@ describe("Propoziții module contract", () => {
     );
     expect((await handle(new Request("https://host/api/other"))).status).toBe(404);
   });
+
+  it("rejects cross-instance credential reconfiguration", () => {
+    expect(() => createHandler(
+      {
+        SUPABASE_URL: "https://other.supabase.co",
+        SUPABASE_PUBLISHABLE_KEY: "different-key",
+        ALLOWED_ORIGINS: ["https://fabian20ro.github.io"]
+      },
+      { logger, clock: { now: () => 0 } }
+    )).toThrow("already configured");
+  });
 });

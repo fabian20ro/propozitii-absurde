@@ -214,3 +214,4 @@
 - Added the Web `Request`/`Response` factory, injected Supabase transport, publishable-key-only manifest, independent lockfile, contract tests and Worker-compatible browser bundle check.
 - Verified 310 existing tests plus shared module tests/typecheck/build.
 - Updated the obsolete Supabase retry lesson: current clients retry eligible transient GET/HEAD failures; round-trip reduction remains necessary.
+- Review fix: factory configuration is now immutable per runtime isolate; a second factory cannot silently replace credentials, origin policy, transport, or timeout used by an existing handler.
