@@ -196,3 +196,14 @@
 **Outcome:** Focused decorator tests pass; local Quarkus integration startup remains blocked by the documented Colima/Ryuk socket-mount issue.
 **Insight:** Assert verse delimiters only for providers whose output contract is multiline; test decorator transformation independently.
 **Promoted to Lessons Learned:** Yes
+
+
+---
+
+### [2026-07-29] Pin the public shared API contract
+
+**Context:** The future provider-neutral module needs a public contract without access to the private shared-api-host control plane.
+**What happened:** Added shared-api/README.md with an immutable v1.0.1 release, schema URL, SHA-256 digest, authoring guide, preserved /api/all, dexonline-link, and literal " / " contracts, and the explicit no-deploy boundary.
+**Outcome:** Success — maintainers and agents can begin the module migration against a public, pinned contract.
+**Insight:** Public module repositories should pin both a release and schema digest; public merges must remain separate from private source-lock promotion.
+**Promoted to Lessons Learned:** Yes

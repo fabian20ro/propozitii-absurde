@@ -125,6 +125,8 @@ Obsolete lessons move to Archive section at bottom (with date and reason). Never
 
 **[2026-05-15]** Codemap freshness should track the maintained map — Stale freshness timestamps on ramp-up codemaps make current docs look suspicious; update the index and the nearest codemap together so onboarding cues stay trustworthy.
 
+
+**[2026-07-29]** Shared API modules pin a public release and schema digest — Public module code must not depend on private control-plane access. Keep production adoption separate: a public merge changes source only; deployment requires a reviewed private source-lock promotion.
 ---
 
 ## Archive
