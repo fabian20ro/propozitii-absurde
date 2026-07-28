@@ -37,4 +37,13 @@ class DecoratorTest {
 
         assertEquals("123 & 456", result)
     }
+
+    @Test
+    fun `capitalizer degrades to an empty sentence when its provider fails`() {
+        val failingProvider = object : ISentenceProvider {
+            override fun getSentence(): String = error("provider unavailable")
+        }
+
+        assertEquals("", FirstSentenceLetterCapitalizer(failingProvider).getSentence())
+    }
 }
