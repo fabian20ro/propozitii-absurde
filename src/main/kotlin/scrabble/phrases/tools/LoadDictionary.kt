@@ -98,6 +98,12 @@ private fun loadWords(conn: Connection, wordsFile: File) {
                         // Not numeric, use as-is
                     }
 
+                    if (word.isEmpty()) {
+                        skipped++
+                        println("Skipped empty word from line '$line'")
+                        return@forEachLine
+                    }
+
                     when (type) {
                         "M" -> insertNoun(stmt, word, NounGender.M)
                         "F" -> insertNoun(stmt, word, NounGender.F)
