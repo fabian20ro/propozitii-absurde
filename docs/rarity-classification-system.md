@@ -6,7 +6,7 @@ The offline rarity-classification system is no longer implemented in this reposi
 Current location:
 - https://github.com/fabian20ro/word-rarity-classifier
 
-This app (`propozitii-nostime`) only consumes `words.rarity_level` at runtime via `minRarity`/`rarity` query parameters.
+This app (`propozitii-absurde`) only consumes `words.rarity_level` at runtime via `minRarity`/`rarity` query parameters.
 
 ## What The Classifier Does Today
 

@@ -14,8 +14,8 @@ Optional:
 ## First-Time Setup
 
 ```bash
-git clone https://github.com/fabian20ro/propozitii-nostime.git
-cd propozitii-nostime
+git clone https://github.com/fabian20ro/propozitii-absurde.git
+cd propozitii-absurde
 
 # Enable credential-scanning pre-commit hook
 git config core.hooksPath .githooks

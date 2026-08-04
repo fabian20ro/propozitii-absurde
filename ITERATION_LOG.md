@@ -215,3 +215,14 @@
 - Verified 310 existing tests plus shared module tests/typecheck/build.
 - Updated the obsolete Supabase retry lesson: current clients retry eligible transient GET/HEAD failures; round-trip reduction remains necessary.
 - Review fix: factory configuration is now immutable per runtime isolate; a second factory cannot silently replace credentials, origin policy, transport, or timeout used by an existing handler.
+
+### 2026-08-04: Rename repository to propozitii-absurde
+
+**Context:** Git transport for `fabian20ro/propozitii-nostime` was disabled; the replacement repository also adopts the product's existing “Propoziții Absurde” name.
+**What happened:**
+- Updated GitHub repository and Pages links, badges, root project/package metadata, contributor instructions, and current app documentation
+- Preserved the existing Render/Vercel service domains and the published `@propozitii-nostime/shared-api` contract identity
+- Kept historical run records and generated Codex environment identity unchanged
+**Outcome:** Success — TypeScript lint/build passed; 311 direct Node tests, 619 Gradle-managed frontend/shared tests, and the full Kotlin/Quarkus suite passed.
+**Insight:** Repository branding can change independently from deployed service and public package identities; preserving those contracts avoids an unrelated infrastructure migration.
+**Promoted to Lessons Learned:** No

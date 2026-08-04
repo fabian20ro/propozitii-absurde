@@ -1,11 +1,11 @@
-# Propozitii Nostime
+# Propoziții Absurde
 
-[![Build Backend](https://github.com/fabian20ro/propozitii-nostime/actions/workflows/backend.yml/badge.svg)](https://github.com/fabian20ro/propozitii-nostime/actions/workflows/backend.yml)
-[![Deploy Frontend](https://github.com/fabian20ro/propozitii-nostime/actions/workflows/frontend.yml/badge.svg)](https://github.com/fabian20ro/propozitii-nostime/actions/workflows/frontend.yml)
+[![Build Backend](https://github.com/fabian20ro/propozitii-absurde/actions/workflows/backend.yml/badge.svg)](https://github.com/fabian20ro/propozitii-absurde/actions/workflows/backend.yml)
+[![Deploy Frontend](https://github.com/fabian20ro/propozitii-absurde/actions/workflows/frontend.yml/badge.svg)](https://github.com/fabian20ro/propozitii-absurde/actions/workflows/frontend.yml)
 
-Generator de propozitii hazoase in limba romana (Romanian funny sentence generator).
+Generator de propoziții absurde în limba română (Romanian absurd sentence generator).
 
-**Live Demo:** https://fabian20ro.github.io/propozitii-nostime/
+**Live Demo:** https://fabian20ro.github.io/propozitii-absurde/
 
 ## Architecture
 
@@ -13,7 +13,7 @@ Generator de propozitii hazoase in limba romana (Romanian funny sentence generat
 |-----------|------------|---------|
 | Backend | Kotlin + Quarkus 3.17 (JVM) | [Render.com](https://propozitii-nostime.onrender.com/q/health) |
 | Fallback API | Vercel Serverless Function (`api/all.ts`) | [Vercel](https://propozitii-nostime.vercel.app/api/all) |
-| Frontend | Static HTML/CSS/JS | [GitHub Pages](https://fabian20ro.github.io/propozitii-nostime/) |
+| Frontend | Static HTML/CSS/JS | [GitHub Pages](https://fabian20ro.github.io/propozitii-absurde/) |
 | Database | PostgreSQL ([Supabase](https://supabase.com)) | Supabase Free Tier |
 | Dictionary | [dexonline.ro](https://dexonline.ro) Scrabble word list | Loaded into Supabase |
 
@@ -142,7 +142,7 @@ For a system-level overview and lessons learned from classification campaigns, s
 ## Project Structure
 
 ```
-propozitii-nostime/
+propozitii-absurde/
 ├── src/main/kotlin/scrabble/phrases/
 │   ├── PhraseResource.kt           # REST API endpoints
 │   ├── SentenceResponse.kt         # JSON response

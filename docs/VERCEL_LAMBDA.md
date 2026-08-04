@@ -60,7 +60,7 @@ If required env vars are missing or insecure-only fallback is blocked, `api/all.
 
 2. In Vercel, create a new project:
    - `Add New -> Project -> Import Git Repository`
-   - select `fabian20ro/propozitii-nostime`
+   - select `fabian20ro/propozitii-absurde`
 
 3. Configure project:
    - Framework Preset: `Other`
