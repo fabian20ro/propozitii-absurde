@@ -104,7 +104,7 @@ This repository no longer includes the offline rarity classification pipeline.
 It only consumes `words.rarity_level` at runtime for sentence filtering (`minRarity`/`rarity` query params).
 
 The classification system now lives in a separate project:
-- https://github.com/fabian20ro/word-rarity-classifier
+- https://github.com/fabian20ro/rarity-classificator
 
 For a system-level overview and lessons learned from classification campaigns, see:
 - `docs/rarity-classification-system.md`

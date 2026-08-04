@@ -4,7 +4,7 @@
 
 The offline rarity-classification system is no longer implemented in this repository.
 Current location:
-- https://github.com/fabian20ro/word-rarity-classifier
+- https://github.com/fabian20ro/rarity-classificator
 
 This app (`propozitii-absurde`) only consumes `words.rarity_level` at runtime via `minRarity`/`rarity` query parameters.
 

@@ -226,3 +226,13 @@
 **Outcome:** Success — TypeScript lint/build passed; 311 direct Node tests, 619 Gradle-managed frontend/shared tests, and the full Kotlin/Quarkus suite passed.
 **Insight:** Repository branding can change independently from deployed service and public package identities; preserving those contracts avoids an unrelated infrastructure migration.
 **Promoted to Lessons Learned:** No
+
+---
+
+### [2026-08-04] Complete active rename metadata audit
+
+**Context:** The repository had already moved to `propozitii-absurde`, but IDE/Codex labels and live documentation still contained retired project destinations.
+**What happened:** Updated the Eclipse and Codex display names to `propozitii-absurde`, and replaced all active `word-rarity-classifier` documentation links with `rarity-classificator`. Preserved the local folder, Compound stable ID and branch key, deployed service domains, package identity, and historical reports.
+**Outcome:** Active metadata and cross-project documentation now point to current identities while operational compatibility remains intact.
+**Insight:** Repository, display, local-path, deployment, and package identities require separate rename decisions.
+**Promoted to Lessons Learned:** No

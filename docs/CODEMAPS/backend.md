@@ -79,7 +79,7 @@ Offline rarity classification tooling was moved out of this repository.
 Current backend scope is runtime sentence generation and filtering by existing `rarity_level`.
 
 External repository:
-- https://github.com/fabian20ro/word-rarity-classifier
+- https://github.com/fabian20ro/rarity-classificator
 
 Overview in this repo:
 - `docs/rarity-classification-system.md`

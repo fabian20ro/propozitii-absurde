@@ -63,7 +63,7 @@ This repository no longer contains offline rarity classification tooling.
 It consumes `words.rarity_level` at runtime for filtering only.
 
 The classifier now lives in:
-- https://github.com/fabian20ro/word-rarity-classifier
+- https://github.com/fabian20ro/rarity-classificator
 
 Overview document:
 - `docs/rarity-classification-system.md`

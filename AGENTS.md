@@ -15,7 +15,7 @@ work style: telegraph; noun-phrases ok; drop grammar; min tokens.
 
 4. **Dual-backend parity:** Every sentence type or decorator change must be applied to BOTH `PhraseResource.kt` (Kotlin/Render) AND `api/all.ts` (TypeScript/Vercel). Both must return the same `/api/all` response shape, dexonline links, and `" / "` delimiters.
 
-5. **Rarity is external:** Never set `rarity_level` in `LoadDictionary` — it is managed by the [word-rarity-classifier](https://github.com/fabian20ro/word-rarity-classifier) project. The loader backs up and restores rarity levels across reloads.
+5. **Rarity is external:** Never set `rarity_level` in `LoadDictionary` — it is managed by [Rarity Classificator](https://github.com/fabian20ro/rarity-classificator). The loader backs up and restores rarity levels across reloads.
 
 ## Legacy & Deprecated
 
